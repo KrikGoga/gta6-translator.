@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>GTA VI - Live Voice Subtitle Translator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090a10;
+      --card-bg: rgba(18, 20, 32, 0.85);
+      --accent-pink: #ff2a85;
+      --accent-cyan: #00f0ff;
+      --accent-yellow: #ffe600;
+      --text-main: #f0f3fa;
+      --text-muted: #8c93a8;
+      --border-color: rgba(255, 42, 133, 0.3);
+      --success: #00ff88;
+      --danger: #ff3366;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: 'Montserrat', sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Video & Camera Viewfinder */
+    #viewport-container {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #camera-feed {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Subtitle Target Box (Region of Interest) */
+    #roi-box {
+      position: absolute;
+      border: 2px dashed var(--accent-cyan);
+      background: rgba(0, 240, 255, 0.08);
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.25), inset 0 0 15px rgba(0, 240, 255, 0.15);
+      border-radius: 8px;
+      pointer-events: none;
+      transition: all 0.15s ease-out;
+      z-index: 10;
+    }
+
+    #roi-box::before {
+      content: "Зона субтитров GTA VI";
+      position: absolute;
+      top: -24px;
+      left: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      background: rgba(9, 10, 16, 0.85);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 240, 255, 0.3);
+    }
+
+    .roi-corner {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-color: var(--accent-pink);
+      border-style: solid;
+    }
+    .roi-corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; }
+    .roi-corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; }
+    .roi-corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; }
+    .roi-corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; }
+
+    /* Top HUD Bar */
+    #top-hud {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(180deg, rgba(9,10,16,0.9) 0%, rgba(9,10,16,0) 100%);
+      z-index: 20;
+    }
+
+    .hud-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-logo {
+      font-weight: 900;
+      font-size: 18px;
+      background: linear-gradient(135deg, var(--accent-pink), var(--accent-yellow));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: 1.5px;
+    }
+
+    .status-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .status-badge.scanning .status-dot { background: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan); }
+    .status-badge.processing .status-dot { background: var(--accent-yellow); box-shadow: 0 0 8px var(--accent-yellow); }
+    .status-badge.speaking .status-dot { background: var(--accent-pink); box-shadow: 0 0 8px var(--accent-pink); }
+    .status-badge.error .status-dot { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+
+    .top-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      transition: all 0.2s;
+    }
+    .icon-btn:active {
+      transform: scale(0.92);
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    /* Subtitle Display Overlay (Bottom of Viewport) */
+    #subtitle-overlay {
+      position: absolute;
+      bottom: 90px;
+      left: 16px;
+      right: 16px;
+      background: rgba(9, 10, 16, 0.88);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 14px 16px;
+      backdrop-filter: blur(16px);
+      z-index: 20;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s;
+    }
+
+    #subtitle-overlay.hidden {
+      opacity: 0;
+      transform: translateY(20px);
+      pointer-events: none;
+    }
+
+    .speaker-tag {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent-yellow);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .translated-text {
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.35;
+      color: #ffffff;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+      margin-bottom: 6px;
+    }
+
+    .original-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+      line-height: 1.3;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 6px;
+    }
+
+    /* Bottom Control Bar */
+    #bottom-bar {
+      height: 80px;
+      padding: 0 20px;
+      background: rgba(14, 16, 24, 0.95);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      z-index: 25;
+      backdrop-filter: blur(20px);
+    }
+
+    .main-toggle-btn {
+      flex: 1;
+      height: 52px;
+      background: linear-gradient(135deg, var(--accent-pink), #c2005c);
+      color: #fff;
+      border: none;
+      border-radius: 26px;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 6px 20px rgba(255, 42, 133, 0.4);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .main-toggle-btn:active {
+      transform: scale(0.97);
+    }
+
+    .main-toggle-btn.running {
+      background: linear-gradient(135deg, #2b3040, #1b1e2a);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--accent-cyan);
+    }
+
+    .side-tool-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .side-tool-btn:active {
+      transform: scale(0.93);
+    }
+
+    /* Modal / Bottom Drawer for Settings & History */
+    .drawer-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: flex-end;
+    }
+    .drawer-overlay.active {
+      display: flex;
+    }
+
+    .drawer-card {
+      width: 100%;
+      max-height: 85vh;
+      background: #111420;
+      border-top-left-radius: 24px;
+      border-top-right-radius: 24px;
+      border-top: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 24px 20px 32px 20px;
+      overflow-y: auto;
+      box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
+    }
+
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .drawer-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .form-input, .form-select {
+      width: 100%;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+      transition: border 0.2s;
+    }
+    .form-input:focus, .form-select:focus {
+      border-color: var(--accent-pink);
+    }
+
+    .range-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .range-wrap input[type=range] {
+      flex: 1;
+      accent-color: var(--accent-pink);
+    }
+    .range-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: var(--accent-cyan);
+      width: 44px;
+      text-align: right;
+    }
+
+    /* History List */
+    .history-item {
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    .history-item .h-time {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .history-item .h-ru {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .history-item .h-en {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* Helper Banner */
+    .hint-banner {
+      background: rgba(0, 240, 255, 0.08);
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.4;
+      color: #c0f4ff;
+      margin-bottom: 16px;
+    }
+
+    /* Canvas hidden */
+    #capture-canvas {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top HUD Bar -->
+  <header id="top-hud">
+    <div class="hud-brand">
+      <span class="brand-logo">GTA VI</span>
+      <span id="status-badge" class="status-badge">
+        <span class="status-dot"></span>
+        <span id="status-text">ГОТОВ</span>
+      </span>
+    </div>
+    <div class="top-actions">
+      <button id="history-btn" class="icon-btn" title="История диалогов">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </button>
+      <button id="camera-flip-btn" class="icon-btn" title="Сменить камеру">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      </button>
+      <button id="settings-btn" class="icon-btn" title="Настройки">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Camera Viewport & Scanning Area -->
+  <main id="viewport-container">
+    <video id="camera-feed" playsinline autoplay muted></video>
+
+    <!-- Subtitle Region of Interest (Target Box) -->
+    <div id="roi-box">
+      <div class="roi-corner tl"></div>
+      <div class="roi-corner tr"></div>
+      <div class="roi-corner bl"></div>
+      <div class="roi-corner br"></div>
+    </div>
+
+    <!-- Active Subtitle Card Overlay -->
+    <div id="subtitle-overlay" class="hidden">
+      <div id="speaker-tag" class="speaker-tag">
+        <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/></svg>
+        <span id="speaker-name">ДИАЛОГ</span>
+      </div>
+      <div id="translated-text" class="translated-text">...</div>
+      <div id="original-text" class="original-text">...</div>
+    </div>
+  </main>
+
+  <!-- Bottom Control Bar -->
+  <footer id="bottom-bar">
+    <button id="mute-btn" class="side-tool-btn" title="Вкл/Выкл озвучку">
+      <svg id="mute-icon-on" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+      <svg id="mute-icon-off" style="display:none;" width="20" height="20" fill="none" stroke="var(--danger)" stroke-width="2" viewBox="0 0 24 24"><path d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/><path d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>
+    </button>
+
+    <button id="main-toggle-btn" class="main-toggle-btn">
+      <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      <span>НАЧАТЬ ПЕРЕВОД</span>
+    </button>
+
+    <button id="replay-btn" class="side-tool-btn" title="Повторить фразу">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+    </button>
+  </footer>
+
+  <!-- Settings Drawer -->
+  <div id="settings-drawer" class="drawer-overlay">
+    <div class="drawer-card">
+      <div class="drawer-header">
+        <h3 class="drawer-title">Настройки переводчика</h3>
+        <button id="close-settings" class="icon-btn">&times;</button>
+      </div>
+
+      <div class="hint-banner">
+        💡 <strong>Совет:</strong> Расположите телефон на подставке так, чтобы зона субтитров в GTA VI точно попадала в рамку прицела на экране.
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="api-key-input">Gemini API Key</label>
+        <input type="password" id="api-key-input" class="form-input" placeholder="AQ.Ab8RN6IA..." autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="model-select">Модель Gemini</label>
+        <select id="model-select" class="form-select">
+          <option value="gemini-2.0-flash">Gemini 2.0 Flash (Сверхбыстрая, рекомендуется)</option>
+          <option value="gemini-1.5-flash">Gemini 1.5 Flash (Стабильная)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Интервал сканирования</label>
+        <div class="range-wrap">
+          <input type="range" id="interval-range" min="0.8" max="3.0" step="0.2" value="1.4">
+          <span id="interval-val" class="range-val">1.4s</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Скорость озвучки (голоса)</label>
+        <div class="range-wrap">
+          <input type="range" id="voice-rate-range" min="0.8" max="1.5" step="0.05" value="1.15">
+          <span id="voice-rate-val" class="range-val">1.15x</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Высота рамки прицела (% экрана)</label>
+        <div class="range-wrap">
+          <input type="range" id="roi-height-range" min="10" max="40" step="2" value="22">
+          <span id="roi-height-val" class="range-val">22%</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Позиция рамки по вертикали (% от верха)</label>
+        <div class="range-wrap">
+          <input type="range" id="roi-top-range" min="40" max="85" step="2" value="68">
+          <span id="roi-top-val" class="range-val">68%</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <button id="test-voice-btn" class="main-toggle-btn" style="background:#2b3040; box-shadow:none; border:1px solid rgba(255,255,255,0.2);">
+          🔊 Проверить голос озвучки
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Drawer -->
+  <div id="history-drawer" class="drawer-overlay">
+    <div class="drawer-card">
+      <div class="drawer-header">
+        <h3 class="drawer-title">История реплик</h3>
+        <button id="close-history" class="icon-btn">&times;</button>
+      </div>
+      <div id="history-container">
+        <p style="color:var(--text-muted); font-size:13px; text-align:center; padding:20px;">История пуста. Начните сканирование игры!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Offscreen canvas for frame capture -->
+  <canvas id="capture-canvas"></canvas>
+
+  <script>
+    // Configuration & State
+    const CONFIG = {
+      defaultApiKey: "AQ.Ab8RN6IA_XceaoMZFJpixXQuFVHollfABm3rNm_U4l6UsmvF7w",
+      model: localStorage.getItem('gta_model') || 'gemini-2.0-flash',
+      interval: parseFloat(localStorage.getItem('gta_interval') || '1.4'),
+      voiceRate: parseFloat(localStorage.getItem('gta_voice_rate') || '1.15'),
+      roiTop: parseInt(localStorage.getItem('gta_roi_top') || '68'),
+      roiHeight: parseInt(localStorage.getItem('gta_roi_height') || '22'),
+      apiKey: localStorage.getItem('gta_api_key') || "AQ.Ab8RN6IA_XceaoMZFJpixXQuFVHollfABm3rNm_U4l6UsmvF7w"
+    };
+
+    let isRunning = false;
+    let isMuted = false;
+    let isProcessing = false;
+    let scanTimer = null;
+    let videoStream = null;
+    let currentFacingMode = 'environment'; // Back camera by default
+    let lastSpokenText = '';
+    let lastSpokenTime = 0;
+    let history = [];
+    let ruVoice = null;
+
+    // DOM Elements
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('capture-canvas');
+    const ctx = canvas.getContext('2d');
+    const roiBox = document.getElementById('roi-box');
+    const statusBadge = document.getElementById('status-badge');
+    const statusText = document.getElementById('status-text');
+    const subtitleOverlay = document.getElementById('subtitle-overlay');
+    const speakerTag = document.getElementById('speaker-tag');
+    const speakerName = document.getElementById('speaker-name');
+    const translatedTextEl = document.getElementById('translated-text');
+    const originalTextEl = document.getElementById('original-text');
+    const mainToggleBtn = document.getElementById('main-toggle-btn');
+    const muteBtn = document.getElementById('mute-btn');
+    const muteIconOn = document.getElementById('mute-icon-on');
+    const muteIconOff = document.getElementById('mute-icon-off');
+    const replayBtn = document.getElementById('replay-btn');
+    const settingsBtn = document.getElementById('settings-btn');
+    const historyBtn = document.getElementById('history-btn');
+    const cameraFlipBtn = document.getElementById('camera-flip-btn');
+    const settingsDrawer = document.getElementById('settings-drawer');
+    const historyDrawer = document.getElementById('history-drawer');
+    const apiKeyInput = document.getElementById('api-key-input');
+    const modelSelect = document.getElementById('model-select');
+    const intervalRange = document.getElementById('interval-range');
+    const intervalVal = document.getElementById('interval-val');
+    const voiceRateRange = document.getElementById('voice-rate-range');
+    const voiceRateVal = document.getElementById('voice-rate-val');
+    const roiHeightRange = document.getElementById('roi-height-range');
+    const roiHeightVal = document.getElementById('roi-height-val');
+    const roiTopRange = document.getElementById('roi-top-range');
+    const roiTopVal = document.getElementById('roi-top-val');
+    const testVoiceBtn = document.getElementById('test-voice-btn');
+    const historyContainer = document.getElementById('history-container');
+
+    // Initialize Settings UI
+    apiKeyInput.value = CONFIG.apiKey;
+    modelSelect.value = CONFIG.model;
+    intervalRange.value = CONFIG.interval;
+    intervalVal.textContent = CONFIG.interval + 's';
+    voiceRateRange.value = CONFIG.voiceRate;
+    voiceRateVal.textContent = CONFIG.voiceRate + 'x';
+    roiHeightRange.value = CONFIG.roiHeight;
+    roiHeightVal.textContent = CONFIG.roiHeight + '%';
+    roiTopRange.value = CONFIG.roiTop;
+    roiTopVal.textContent = CONFIG.roiTop + '%';
+
+    // Apply ROI Geometry
+    function updateRoiGeometry() {
+      roiBox.style.top = CONFIG.roiTop + '%';
+      roiBox.style.height = CONFIG.roiHeight + '%';
+      roiBox.style.left = '6%';
+      roiBox.style.width = '88%';
+    }
+    updateRoiGeometry();
+
+    // Voice Synthesis Initialization
+    function loadVoices() {
+      if (!('speechSynthesis' in window)) return;
+      const voices = window.speechSynthesis.getVoices();
+      ruVoice = voices.find(v => v.lang.startsWith('ru') || v.lang.includes('RU')) || null;
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+    }
+
+    function speakRussian(text) {
+      if (isMuted || !text || !('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel(); // Stop any pending voice
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      if (ruVoice) utterance.voice = ruVoice;
+      utterance.lang = 'ru-RU';
+      utterance.rate = CONFIG.voiceRate;
+      utterance.pitch = 1.0;
+
+      utterance.onstart = () => setStatus('speaking', 'ОЗВУЧКА');
+      utterance.onend = () => {
+        if (isRunning && !isProcessing) setStatus('scanning', 'СКАНИРОВАНИЕ');
+      };
+      utterance.onerror = () => {
+        if (isRunning && !isProcessing) setStatus('scanning', 'СКАНИРОВАНИЕ');
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // Camera Management
+    async function startCamera() {
+      try {
+        if (videoStream) {
+          videoStream.getTracks().forEach(t => t.stop());
+        }
+
+        const constraints = {
+          video: {
+            facingMode: { ideal: currentFacingMode },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        };
+
+        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = videoStream;
+        await video.play();
+        setStatus('ready', 'ГОТОВ');
+      } catch (err) {
+        console.error("Camera error:", err);
+        setStatus('error', 'НЕТ КАМЕРЫ');
+        alert("Не удалось запустить камеру: " + err.message + "\n\nУбедитесь, что страница открыта по HTTPS или localhost и доступ к камере разрешен в настройках браузера.");
+      }
+    }
+
+    cameraFlipBtn.addEventListener('click', () => {
+      currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+      startCamera();
+    });
+
+    // Subtitle Extraction & Frame Cropping
+    function captureRoiFrame() {
+      if (!video.videoWidth || !video.videoHeight) return null;
+
+      const vW = video.videoWidth;
+      const vH = video.videoHeight;
+
+      // Calculate ROI pixel coordinates based on config percentages
+      const roiY = Math.floor(vH * (CONFIG.roiTop / 100));
+      const roiH = Math.floor(vH * (CONFIG.roiHeight / 100));
+      const roiX = Math.floor(vW * 0.06);
+      const roiW = Math.floor(vW * 0.88);
+
+      // Scale down canvas for fast transmission (~640px width is plenty for clear text)
+      const targetW = 640;
+      const targetH = Math.floor(roiH * (targetW / roiW));
+
+      canvas.width = targetW;
+      canvas.height = targetH;
+
+      ctx.drawImage(video, roiX, roiY, roiW, roiH, 0, 0, targetW, targetH);
+      return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+    }
+
+    // Similarity Check (Prevent repeating identical subtitles)
+    function cleanString(str) {
+      return (str || '').toLowerCase().replace(/[^a-zа-я0-9\s]/gi, '').trim();
+    }
+
+    function isSameSubtitle(newText, prevText) {
+      const a = cleanString(newText);
+      const b = cleanString(prevText);
+      if (!a || !b) return false;
+      if (a === b) return true;
+      if (a.includes(b) || b.includes(a)) {
+        const minLen = Math.min(a.length, b.length);
+        const maxLen = Math.max(a.length, b.length);
+        if (minLen / maxLen > 0.75) return true;
+      }
+      return false;
+    }
+
+    // Gemini API Subtitle OCR & Translation
+    async function processFrame() {
+      if (!isRunning || isProcessing) return;
+
+      const base64Data = captureRoiFrame();
+      if (!base64Data) return;
+
+      isProcessing = true;
+      setStatus('processing', 'АНАЛИЗ');
+
+      const promptText = `You are a real-time game subtitle translator for GTA VI (Grand Theft Auto 6).
+Look at this cropped subtitle area from the game screen.
+1. Determine if there are readable English dialogue subtitles or character lines.
+2. If YES, extract the text and translate it into Russian. The Russian translation MUST match GTA street tone, crime drama atmosphere, and slang naturally and punchily.
+3. If a character name is present (e.g. "Jason:", "Lucia:"), separate it into the 'speaker' field.
+4. If there is NO subtitle text or only noise/gameplay graphics, return has_subtitles: false.
+Output strictly JSON:
+{
+  "has_subtitles": true,
+  "speaker": "Name or empty",
+  "original": "English subtitle",
+  "translation": "Русский перевод"
+}`;
+
+      const requestBody = {
+        contents: [
+          {
+            parts: [
+              { text: promptText },
+              {
+                inline_data: {
+                  mime_type: "image/jpeg",
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          response_mime_type: "application/json",
+          temperature: 0.1
+        }
+      };
+
+      const apiKey = CONFIG.apiKey.trim();
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.model}:generateContent?key=${apiKey}`;
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error?.message || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (candidate) {
+          const result = JSON.parse(candidate);
+          handleSubtitleResult(result);
+        }
+      } catch (err) {
+        console.warn("Translation API error:", err);
+        // Fallback model if 2.0-flash is unavailable
+        if (CONFIG.model === 'gemini-2.0-flash' && err.message.includes('404')) {
+          CONFIG.model = 'gemini-1.5-flash';
+          localStorage.setItem('gta_model', 'gemini-1.5-flash');
+          modelSelect.value = 'gemini-1.5-flash';
+        }
+      } finally {
+        isProcessing = false;
+        if (isRunning) {
+          setStatus('scanning', 'СКАНИРОВАНИЕ');
+        }
+      }
+    }
+
+    function handleSubtitleResult(result) {
+      if (!result || !result.has_subtitles || !result.translation) {
+        return; // No subtitle detected in this frame
+      }
+
+      const enText = result.original || '';
+      const ruText = result.translation || '';
+      const speaker = result.speaker || '';
+
+      // Check for repetition
+      const now = Date.now();
+      if (isSameSubtitle(enText, lastSpokenText) && (now - lastSpokenTime < 7000)) {
+        return; // Same subtitle is still hanging on screen, don't repeat voice
+      }
+
+      lastSpokenText = enText;
+      lastSpokenTime = now;
+
+      // Update Subtitle Overlay
+      if (speaker) {
+        speakerTag.style.display = 'flex';
+        speakerName.textContent = speaker;
+      } else {
+        speakerTag.style.display = 'none';
+      }
+      translatedTextEl.textContent = ruText;
+      originalTextEl.textContent = enText;
+      subtitleOverlay.classList.remove('hidden');
+
+      // Add to History
+      const timeStr = new Date().toLocaleTimeString();
+      history.unshift({ time: timeStr, speaker, en: enText, ru: ruText });
+      if (history.length > 50) history.pop();
+      renderHistory();
+
+      // Trigger Voice Synthesis
+      speakRussian(ruText);
+    }
+
+    // Status UI Helper
+    function setStatus(state, text) {
+      statusBadge.className = 'status-badge ' + state;
+      statusText.textContent = text;
+    }
+
+    // Toggle Main Loop
+    function toggleScanning() {
+      isRunning = !isRunning;
+
+      if (isRunning) {
+        // Unlock speech synthesis on user gesture
+        if ('speechSynthesis' in window) {
+          const unlockUtterance = new SpeechSynthesisUtterance('');
+          window.speechSynthesis.speak(unlockUtterance);
+        }
+
+        mainToggleBtn.classList.add('running');
+        mainToggleBtn.innerHTML = `
+          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          <span>ОСТАНОВИТЬ</span>
+        `;
+        setStatus('scanning', 'СКАНИРОВАНИЕ');
+        scanTimer = setInterval(processFrame, CONFIG.interval * 1000);
+        processFrame(); // Run first check immediately
+      } else {
+        mainToggleBtn.classList.remove('running');
+        mainToggleBtn.innerHTML = `
+          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          <span>НАЧАТЬ ПЕРЕВОД</span>
+        `;
+        clearInterval(scanTimer);
+        scanTimer = null;
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        setStatus('ready', 'ГОТОВ');
+      }
+    }
+    mainToggleBtn.addEventListener('click', toggleScanning);
+
+    // Mute Audio Toggle
+    muteBtn.addEventListener('click', () => {
+      isMuted = !isMuted;
+      muteIconOn.style.display = isMuted ? 'none' : 'block';
+      muteIconOff.style.display = isMuted ? 'block' : 'none';
+      if (isMuted && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+    });
+
+    // Replay Last Subtitle
+    replayBtn.addEventListener('click', () => {
+      if (history.length > 0) {
+        speakRussian(history[0].ru);
+      }
+    });
+
+    // History Drawer Rendering
+    function renderHistory() {
+      if (history.length === 0) {
+        historyContainer.innerHTML = '<p style="color:var(--text-muted); font-size:13px; text-align:center; padding:20px;">История пуста.</p>';
+        return;
+      }
+      historyContainer.innerHTML = history.map(item => `
+        <div class="history-item">
+          <div class="h-time">${item.time} ${item.speaker ? '• ' + item.speaker : ''}</div>
+          <div class="h-ru">${item.ru}</div>
+          <div class="h-en">${item.en}</div>
+        </div>
+      `).join('');
+    }
+
+    // Modal Events
+    settingsBtn.addEventListener('click', () => settingsDrawer.classList.add('active'));
+    document.getElementById('close-settings').addEventListener('click', () => settingsDrawer.classList.remove('active'));
+    historyBtn.addEventListener('click', () => {
+      renderHistory();
+      historyDrawer.classList.add('active');
+    });
+    document.getElementById('close-history').addEventListener('click', () => historyDrawer.classList.remove('active'));
+
+    // Settings Input Handlers
+    apiKeyInput.addEventListener('change', (e) => {
+      CONFIG.apiKey = e.target.value.trim();
+      localStorage.setItem('gta_api_key', CONFIG.apiKey);
+    });
+
+    modelSelect.addEventListener('change', (e) => {
+      CONFIG.model = e.target.value;
+      localStorage.setItem('gta_model', CONFIG.model);
+    });
+
+    intervalRange.addEventListener('input', (e) => {
+      CONFIG.interval = parseFloat(e.target.value);
+      intervalVal.textContent = CONFIG.interval + 's';
+      localStorage.setItem('gta_interval', CONFIG.interval);
+      if (isRunning) {
+        clearInterval(scanTimer);
+        scanTimer = setInterval(processFrame, CONFIG.interval * 1000);
+      }
+    });
+
+    voiceRateRange.addEventListener('input', (e) => {
+      CONFIG.voiceRate = parseFloat(e.target.value);
+      voiceRateVal.textContent = CONFIG.voiceRate + 'x';
+      localStorage.setItem('gta_voice_rate', CONFIG.voiceRate);
+    });
+
+    roiHeightRange.addEventListener('input', (e) => {
+      CONFIG.roiHeight = parseInt(e.target.value);
+      roiHeightVal.textContent = CONFIG.roiHeight + '%';
+      localStorage.setItem('gta_roi_height', CONFIG.roiHeight);
+      updateRoiGeometry();
+    });
+
+    roiTopRange.addEventListener('input', (e) => {
+      CONFIG.roiTop = parseInt(e.target.value);
+      roiTopVal.textContent = CONFIG.roiTop + '%';
+      localStorage.setItem('gta_roi_top', CONFIG.roiTop);
+      updateRoiGeometry();
+    });
+
+    testVoiceBtn.addEventListener('click', () => {
+      speakRussian("Тест озвучки. Добро пожаловать в Вайс-Сити!");
+    });
+
+    // Start Camera on load
+    window.addEventListener('DOMContentLoaded', () => {
+      startCamera();
+    });
+  </script>
+</body>
+</html>
